@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CNG Dispensers</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 12px;
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #12151a; color: #e7eaf0;
+  }
+  h1 { font-size: 18px; margin: 4px 0 14px; font-weight: 600; }
+  .card { background: #1b1f27; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .name { font-weight: 600; font-size: 16px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #5a6070; }
+  .dot.on { background: #35c46a; }
+  .tag { margin-left: auto; font-size: 12px; padding: 3px 9px; border-radius: 20px;
+         background: #2a303c; color: #9aa3b2; }
+  .tag.filling { background: #2b4a2f; color: #7de09a; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .cell { background: #232833; border-radius: 8px; padding: 9px 10px; }
+  .cell .k { font-size: 11px; color: #8d96a6; text-transform: uppercase; letter-spacing: .4px; }
+  .cell .v { font-size: 17px; font-weight: 600; margin-top: 3px; }
+  .sub { margin-top: 12px; font-size: 13px; color: #9aa3b2; }
+  .sub b { color: #e7eaf0; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+  th { text-align: left; font-size: 11px; color: #8d96a6; text-transform: uppercase;
+       font-weight: 500; padding: 5px 4px; }
+  td { padding: 6px 4px; border-top: 1px solid #262c37; }
+  td.num { text-align: right; }
+  .muted { color: #8d96a6; }
+  @media (max-width: 420px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<h1>CNG Dispensers</h1>
+<div id="root" class="muted">loading…</div>
+
+<script>
+const fmt = (n, d) => (n ?? 0).toLocaleString(undefined, {
+  minimumFractionDigits: d, maximumFractionDigits: d });
+const time = ms => new Date(ms).toLocaleString(undefined, {
+  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+function cell(k, v) { return `<div class="cell"><div class="k">${k}</div><div class="v">${v}</div></div>`; }
+
+function card(d) {
+  const s = d.status;
+  const filling = s && s.filling;
+  const last = d.fills[0];
+
+  const rows = d.fills.map(f => `<tr>
+      <td class="muted">${time(f.ts_ms)}</td>
+      <td class="num">${fmt(f.served_kg, 2)}</td>
+      <td class="num">${fmt(f.amount, 0)}</td>
+      <td class="muted">${f.closed_by}</td>
+    </tr>`).join('') || `<tr><td colspan="4" class="muted">no fills yet</td></tr>`;
+
+  return `<div class="card">
+    <div class="head">
+      <span class="dot ${d.online ? 'on' : ''}"></span>
+      <span class="name">${d.device_id}</span>
+      <span class="tag ${filling ? 'filling' : ''}">${!d.online ? 'Offline' : filling ? 'Filling' : 'Idle'}</span>
+    </div>
+
+    <div class="grid">
+      ${cell('Flow kg/h', s ? fmt(s.flow_kg_h, 1) : '—')}
+      ${cell('Temp °C', s ? fmt(s.temp_c, 1) : '—')}
+      ${cell('This fill kg', s && filling ? fmt(s.current_kg, 2) : '—')}
+    </div>
+
+    <div class="sub">
+      Last served: ${last ? `<b>${fmt(last.served_kg, 2)} kg</b> · <b>${fmt(last.amount, 0)}</b>
+        · ${time(last.ts_ms)} · ${last.closed_by}` : '—'}
+    </div>
+    <div class="sub">
+      Today: <b>${fmt(d.today.kg, 2)} kg</b> · <b>${fmt(d.today.amount, 0)}</b><br>
+      All time: <b>${fmt(d.all_time.kg, 2)} kg</b> · <b>${fmt(d.all_time.amount, 0)}</b><br>
+      Bad CRC: <b>${s ? s.bad_crc_count : '—'}</b>
+    </div>
+
+    <table>
+      <tr><th>Time</th><th style="text-align:right">kg</th>
+          <th style="text-align:right">Amount</th><th>Closed by</th></tr>
+      ${rows}
+    </table>
+  </div>`;
+}
+
+async function tick() {
+  try {
+    const r = await fetch('/api/summary');
+    const data = await r.json();
+    document.getElementById('root').innerHTML =
+      data.devices.length ? data.devices.map(card).join('') : '<p class="muted">no devices yet</p>';
+  } catch (e) {
+    // keep the last render on a failed poll
+  }
+}
+
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>
