@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::Html;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -48,7 +48,6 @@ struct FillPost {
 struct AppState {
     db: MySqlPool,
     statuses: RwLock<HashMap<String, Stored>>,
-    api_key: String,
 }
 
 fn now_ms() -> i64 {
@@ -210,38 +209,23 @@ async fn tcp_ingest(state: Arc<AppState>, addr: String, port: u16) {
 
 // ---------------------------------------------------------------- HTTP
 //
-// The device speaks TCP, but these two routes stay so the dashboard can be
-// exercised with curl and fake data (see README).
-
-fn check_key(headers: &HeaderMap, state: &AppState) -> Result<(), StatusCode> {
-    let given = headers
-        .get("X-API-Key")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if given == state.api_key {
-        Ok(())
-    } else {
-        Err(StatusCode::UNAUTHORIZED)
-    }
-}
+// The device speaks TCP and sends no credentials, so these two routes are
+// unauthenticated too. They exist only so the dashboard can be exercised with
+// curl and fake data (see README).
 
 async fn post_status(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
     Json(body): Json<DeviceStatus>,
-) -> Result<StatusCode, StatusCode> {
-    check_key(&headers, &state)?;
+) -> StatusCode {
     let device_id = body.device_id.clone();
     touch_status(&state, &device_id, move |s| *s = body);
-    Ok(StatusCode::OK)
+    StatusCode::OK
 }
 
 async fn post_fill(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
     Json(body): Json<FillPost>,
 ) -> Result<StatusCode, StatusCode> {
-    check_key(&headers, &state)?;
     // a duplicate still answers 200 so a retrying client stops
     insert_fill(
         &state.db,
@@ -366,10 +350,10 @@ async fn main() {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(5000);
-    let tcp_addr = std::env::var("TCP_ADDR").unwrap_or_else(|_| "192.46.236.241".to_string());
-    let api_key = std::env::var("API_KEY").unwrap_or_else(|_| "change-me".to_string());
+    // every interface, so it works whether or not the public IP is on the NIC
+    let tcp_addr = std::env::var("TCP_ADDR").unwrap_or_else(|_| "0.0.0.0".to_string());
     let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "mysql://cng:change-this-password@127.0.0.1:3306/cng".to_string());
+        .unwrap_or_else(|_| "mysql://cng:12345678@127.0.0.1:3306/cng".to_string());
 
     let db = MySqlPoolOptions::new()
         .max_connections(5)
@@ -387,7 +371,6 @@ async fn main() {
     let state = Arc::new(AppState {
         db,
         statuses: RwLock::new(HashMap::new()),
-        api_key,
     });
 
     tokio::spawn(tcp_ingest(state.clone(), tcp_addr, tcp_port));

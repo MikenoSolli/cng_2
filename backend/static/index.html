@@ -3,104 +3,513 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#020203">
 <title>CNG Dispensers</title>
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; padding: 12px;
-    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: #12151a; color: #e7eaf0;
-  }
-  h1 { font-size: 18px; margin: 4px 0 14px; font-weight: 600; }
-  .card { background: #1b1f27; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
-  .head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-  .name { font-weight: 600; font-size: 16px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: #5a6070; }
-  .dot.on { background: #35c46a; }
-  .tag { margin-left: auto; font-size: 12px; padding: 3px 9px; border-radius: 20px;
-         background: #2a303c; color: #9aa3b2; }
-  .tag.filling { background: #2b4a2f; color: #7de09a; }
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .cell { background: #232833; border-radius: 8px; padding: 9px 10px; }
-  .cell .k { font-size: 11px; color: #8d96a6; text-transform: uppercase; letter-spacing: .4px; }
-  .cell .v { font-size: 17px; font-weight: 600; margin-top: 3px; }
-  .sub { margin-top: 12px; font-size: 13px; color: #9aa3b2; }
-  .sub b { color: #e7eaf0; font-weight: 600; }
-  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-  th { text-align: left; font-size: 11px; color: #8d96a6; text-transform: uppercase;
-       font-weight: 500; padding: 5px 4px; }
-  td { padding: 6px 4px; border-top: 1px solid #262c37; }
-  td.num { text-align: right; }
-  .muted { color: #8d96a6; }
-  @media (max-width: 420px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+:root {
+  color-scheme: dark;
+  --bg-deep: #020203;
+  --bg-base: #050506;
+  --surface: rgba(255, 255, 255, .05);
+  --surface-hi: rgba(255, 255, 255, .06);
+  --border: rgba(255, 255, 255, .08);
+  --fg: #EDEDEF;
+  --fg-muted: #8A8F98;
+  --accent: #22C55E;
+  --accent-glow: rgba(34, 197, 94, .20);
+  --warn: #F59E0B;
+  --danger: #EF4444;
+  --radius: 16px;
+  --ease: cubic-bezier(.16, 1, .3, 1);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg-deep);
+  color: var(--fg);
+  font: 400 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* numbers must not reflow as digits change every 2 s */
+.flow, .v, .sub, td.num, .freshness { font-variant-numeric: tabular-nums; }
+
+/* ---------- background ---------- */
+.bg, .scrim {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  /* the artwork deliberately bleeds past the edge; clip it so it cannot
+     widen the document and cause horizontal scroll on a phone */
+  overflow: hidden;
+}
+.bg { background: linear-gradient(170deg, #0a0a0f 0%, #050506 45%, #020203 100%); }
+.nozzle {
+  position: absolute;
+  right: -4vw;
+  /* sits high, where the scrim is lightest — anchored low it drowns in the black */
+  top: -6vh;
+  height: 76vh;
+  width: auto;
+  opacity: .16;
+  color: var(--fg);
+}
+.scrim {
+  background:
+    radial-gradient(60% 40% at 78% 28%, rgba(34, 197, 94, .07), transparent 70%),
+    linear-gradient(to bottom, rgba(2, 2, 3, .22) 0%, rgba(2, 2, 3, .82) 55%, var(--bg-deep) 100%);
+}
+
+/* ---------- shell ---------- */
+.shell {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: max(20px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+           max(40px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+}
+
+.top {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 26px;
+}
+h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+.freshness {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 11px 14px;
+  border: 1px solid rgba(239, 68, 68, .35);
+  border-radius: 12px;
+  background: rgba(239, 68, 68, .08);
+  color: #FCA5A5;
+  font-size: 13px;
+}
+.banner[hidden] { display: none; }
+
+#root { transition: opacity .26s var(--ease); }
+#root.stale { opacity: .45; }
+
+/* ---------- device ---------- */
+.device {
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+  margin-top: 34px;
+}
+.device:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+
+.dhead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-muted);
+  transition: color .2s var(--ease), border-color .2s var(--ease), background-color .2s var(--ease);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.pill[data-state="filling"] {
+  color: var(--accent);
+  border-color: rgba(34, 197, 94, .35);
+  background: rgba(34, 197, 94, .10);
+}
+.pill[data-state="idle"] { color: var(--warn); border-color: rgba(245, 158, 11, .30); }
+.pill[data-state="offline"] { color: var(--danger); border-color: rgba(239, 68, 68, .30); }
+
+/* ---------- hero ---------- */
+.flowline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.flow {
+  font-size: clamp(3rem, 14vw, 5.5rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -.03em;
+  transition: color .26s var(--ease), text-shadow .26s var(--ease);
+}
+.device[data-state="filling"] .flow {
+  color: var(--accent);
+  text-shadow: 0 0 46px var(--accent-glow);
+}
+.device:not([data-state="filling"]) .flow { color: var(--fg-muted); }
+/* an em dash at hero size reads as a stray bar, so shrink the no-data case */
+.flow.none { font-size: clamp(2rem, 7vw, 2.75rem); }
+.unit { font-size: 15px; color: var(--fg-muted); }
+.flowlabel {
+  margin: 8px 0 0;
+  font-size: 11px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.mini {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 30px;
+  margin-top: 22px;
+}
+.stat { display: flex; flex-direction: column; gap: 3px; }
+
+.k {
+  font-size: 11px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.v { font-size: 17px; font-weight: 600; }
+.sub { font-size: 12px; color: var(--fg-muted); }
+
+/* ---------- totals ---------- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 26px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 var(--surface-hi);
+}
+
+/* ---------- fills ---------- */
+.tablewrap { margin-top: 26px; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+th {
+  padding: 0 4px 9px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+td {
+  padding: 11px 4px;
+  border-top: 1px solid var(--border);
+}
+.num { text-align: right; }
+th:last-child, td:last-child { padding-left: 22px; }
+td.dim { color: var(--fg-muted); }
+.by { display: none; }
+tbody tr { animation: rise .26s var(--ease) both; }
+
+.empty {
+  padding: 26px 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+/* ---------- skeleton ---------- */
+.sk {
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.09), rgba(255,255,255,.04));
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+.sk-title { width: 92px; height: 15px; margin-bottom: 20px; }
+.sk-flow { width: min(300px, 70%); height: 78px; margin-bottom: 26px; }
+.sk-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.sk-card { height: 82px; border-radius: var(--radius); }
+
+@keyframes shimmer { to { background-position: -200% 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+
+@media (max-width: 560px) {
+  .nozzle { height: 56vh; right: -20vw; opacity: .09; }
+  .cards, .sk-cards { grid-template-columns: 1fr; }
+  .mini { gap: 10px 22px; }
+  /* four columns do not fit 375px, so fold "closed by" under the time */
+  th:nth-child(4), td:nth-child(4) { display: none; }
+  table { font-size: 12px; }
+  td { padding: 9px 2px; }
+  .by { display: block; margin-top: 2px; font-size: 11px; opacity: .65; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
 </style>
 </head>
 <body>
-<h1>CNG Dispensers</h1>
-<div id="root" class="muted">loading…</div>
+
+<div class="bg" aria-hidden="true">
+  <!-- fuel nozzle resting in a car filler neck -->
+  <svg class="nozzle" viewBox="0 0 420 520" fill="none" stroke="currentColor"
+       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- car panel contour and filler recess -->
+    <path d="M18 470 C 96 300 176 196 356 116" stroke-opacity=".5"/>
+    <path d="M74 516 C 150 346 236 244 412 166" stroke-opacity=".22"/>
+    <ellipse cx="150" cy="322" rx="52" ry="44" transform="rotate(-32 150 322)" stroke-opacity=".55"/>
+    <ellipse cx="150" cy="322" rx="34" ry="28" transform="rotate(-32 150 322)" stroke-opacity=".35"/>
+
+    <g transform="rotate(-32 236 236)">
+      <!-- hose into the grip collar -->
+      <path d="M404 250 C 452 250 470 214 468 150" stroke-opacity=".6"/>
+      <rect x="372" y="222" width="34" height="56" rx="9" stroke-opacity=".7"/>
+      <!-- body -->
+      <rect x="236" y="208" width="140" height="84" rx="22"/>
+      <!-- trigger guard and trigger -->
+      <path d="M274 292 C 266 374 352 380 358 294" stroke-opacity=".75"/>
+      <path d="M292 300 L 338 332" stroke-opacity=".6"/>
+      <!-- tapered spout entering the filler neck -->
+      <path d="M236 224 L 122 238 L 122 272 L 236 286"/>
+      <path d="M150 240 L 150 270" stroke-opacity=".45"/>
+      <!-- top latch detail -->
+      <path d="M262 208 L 262 190 L 322 190 L 322 208" stroke-opacity=".45"/>
+    </g>
+  </svg>
+</div>
+<div class="scrim" aria-hidden="true"></div>
+
+<div class="shell">
+  <header class="top">
+    <h1>CNG Dispensers</h1>
+    <span class="freshness" id="freshness">connecting…</span>
+  </header>
+
+  <div class="banner" id="banner" role="status" hidden>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+    </svg>
+    <span>Connection lost — retrying</span>
+  </div>
+
+  <main id="root">
+    <div class="sk sk-title"></div>
+    <div class="sk sk-flow"></div>
+    <div class="sk-cards">
+      <div class="sk sk-card"></div>
+      <div class="sk sk-card"></div>
+      <div class="sk sk-card"></div>
+    </div>
+  </main>
+</div>
 
 <script>
-const fmt = (n, d) => (n ?? 0).toLocaleString(undefined, {
-  minimumFractionDigits: d, maximumFractionDigits: d });
-const time = ms => new Date(ms).toLocaleString(undefined, {
-  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const root = document.getElementById('root');
+const banner = document.getElementById('banner');
+const freshness = document.getElementById('freshness');
 
-function cell(k, v) { return `<div class="cell"><div class="k">${k}</div><div class="v">${v}</div></div>`; }
+const num = (n, d) => (Number(n) || 0).toLocaleString(undefined,
+  { minimumFractionDigits: d, maximumFractionDigits: d });
+const when = ms => new Date(ms).toLocaleString(undefined,
+  { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-function card(d) {
+const cards = new Map();   // device_id -> { el, refs, sig }
+let fails = 0;
+let lastOk = 0;
+
+function build() {
+  const el = document.createElement('section');
+  el.className = 'device';
+  el.innerHTML = `
+    <div class="dhead">
+      <h2 class="name"></h2>
+      <span class="pill" role="status" aria-live="polite"><i class="dot"></i><span class="ptext"></span></span>
+    </div>
+    <div class="flowline"><span class="flow">—</span><span class="unit">kg/h</span></div>
+    <p class="flowlabel">Mass flow</p>
+    <div class="mini">
+      <div class="stat"><span class="k">Gas temp</span><span class="v r-temp">—</span></div>
+      <div class="stat"><span class="k">This fill</span><span class="v r-cur">—</span></div>
+      <div class="stat"><span class="k">Bad CRC</span><span class="v r-crc">—</span></div>
+    </div>
+    <div class="cards">
+      <div class="card"><span class="k">Last served</span><span class="v r-last">—</span><span class="sub r-lastsub"></span></div>
+      <div class="card"><span class="k">Today</span><span class="v r-today">—</span><span class="sub r-todaysub"></span></div>
+      <div class="card"><span class="k">All time</span><span class="v r-all">—</span><span class="sub r-allsub"></span></div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Time</th><th class="num">kg</th><th class="num">Amount</th><th>Closed by</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>`;
+
+  const q = sel => el.querySelector(sel);
+  return {
+    el, sig: '',
+    refs: {
+      name: q('.name'), pill: q('.pill'), ptext: q('.ptext'), flow: q('.flow'),
+      temp: q('.r-temp'), cur: q('.r-cur'), crc: q('.r-crc'),
+      last: q('.r-last'), lastsub: q('.r-lastsub'),
+      today: q('.r-today'), todaysub: q('.r-todaysub'),
+      all: q('.r-all'), allsub: q('.r-allsub'),
+      tbody: q('tbody')
+    }
+  };
+}
+
+function fillRows(tbody, fills) {
+  tbody.textContent = '';
+  if (!fills.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="4" class="dim">No fills recorded yet</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+  for (const f of fills) {
+    const tr = document.createElement('tr');
+    // closed_by doubles up inside the time cell; the 4th column is dropped on phones
+    tr.innerHTML = `<td class="dim">${when(f.ts_ms)}<span class="by">${f.closed_by}</span></td>
+      <td class="num">${num(f.served_kg, 2)}</td>
+      <td class="num">${num(f.amount, 0)}</td>
+      <td class="dim">${f.closed_by}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// patch the existing nodes; rebuilding them would cancel every transition
+function paint(card, d) {
+  const r = card.refs;
   const s = d.status;
-  const filling = s && s.filling;
+  const state = !d.online ? 'offline' : (s && s.filling ? 'filling' : 'idle');
+
+  r.name.textContent = d.device_id;
+  card.el.dataset.state = state;
+  if (r.pill.dataset.state !== state) {
+    r.pill.dataset.state = state;
+    r.ptext.textContent = state === 'offline' ? 'Offline'
+      : state === 'filling' ? 'Filling' : 'Idle';
+  }
+
+  const noFlow = state === 'offline';
+  r.flow.textContent = noFlow ? '—' : num(s ? s.flow_kg_h : 0, 1);
+  r.flow.classList.toggle('none', noFlow);
+  r.temp.textContent = s && d.online ? num(s.temp_c, 1) + ' °C' : '—';
+  r.cur.textContent = state === 'filling' ? num(s.current_kg, 2) + ' kg' : '—';
+  r.crc.textContent = s ? num(s.bad_crc_count, 0) : '—';
+
   const last = d.fills[0];
+  r.last.textContent = last ? num(last.served_kg, 2) + ' kg' : '—';
+  r.lastsub.textContent = last
+    ? num(last.amount, 0) + ' · ' + when(last.ts_ms) + ' · ' + last.closed_by
+    : 'no fills yet';
+  r.today.textContent = num(d.today.kg, 2) + ' kg';
+  r.todaysub.textContent = num(d.today.amount, 0);
+  r.all.textContent = num(d.all_time.kg, 2) + ' kg';
+  r.allsub.textContent = num(d.all_time.amount, 0);
 
-  const rows = d.fills.map(f => `<tr>
-      <td class="muted">${time(f.ts_ms)}</td>
-      <td class="num">${fmt(f.served_kg, 2)}</td>
-      <td class="num">${fmt(f.amount, 0)}</td>
-      <td class="muted">${f.closed_by}</td>
-    </tr>`).join('') || `<tr><td colspan="4" class="muted">no fills yet</td></tr>`;
+  // the table only changes when a fill completes, not on every poll
+  const sig = d.fills.length + ':' + (last ? last.ts_ms : 0);
+  if (sig !== card.sig) {
+    card.sig = sig;
+    fillRows(r.tbody, d.fills);
+  }
+}
 
-  return `<div class="card">
-    <div class="head">
-      <span class="dot ${d.online ? 'on' : ''}"></span>
-      <span class="name">${d.device_id}</span>
-      <span class="tag ${filling ? 'filling' : ''}">${!d.online ? 'Offline' : filling ? 'Filling' : 'Idle'}</span>
-    </div>
+function render(devices) {
+  if (!devices.length) {
+    cards.clear();
+    root.innerHTML = '<p class="empty">No devices yet. A dispenser appears here once ' +
+      'its sniffer connects to the device port.</p>';
+    return;
+  }
+  if (root.querySelector('.sk, .empty')) {
+    root.textContent = '';
+    cards.clear();
+  }
 
-    <div class="grid">
-      ${cell('Flow kg/h', s ? fmt(s.flow_kg_h, 1) : '—')}
-      ${cell('Temp °C', s ? fmt(s.temp_c, 1) : '—')}
-      ${cell('This fill kg', s && filling ? fmt(s.current_kg, 2) : '—')}
-    </div>
-
-    <div class="sub">
-      Last served: ${last ? `<b>${fmt(last.served_kg, 2)} kg</b> · <b>${fmt(last.amount, 0)}</b>
-        · ${time(last.ts_ms)} · ${last.closed_by}` : '—'}
-    </div>
-    <div class="sub">
-      Today: <b>${fmt(d.today.kg, 2)} kg</b> · <b>${fmt(d.today.amount, 0)}</b><br>
-      All time: <b>${fmt(d.all_time.kg, 2)} kg</b> · <b>${fmt(d.all_time.amount, 0)}</b><br>
-      Bad CRC: <b>${s ? s.bad_crc_count : '—'}</b>
-    </div>
-
-    <table>
-      <tr><th>Time</th><th style="text-align:right">kg</th>
-          <th style="text-align:right">Amount</th><th>Closed by</th></tr>
-      ${rows}
-    </table>
-  </div>`;
+  const seen = new Set();
+  for (const d of devices) {
+    seen.add(d.device_id);
+    let card = cards.get(d.device_id);
+    if (!card) {
+      card = build();
+      cards.set(d.device_id, card);
+      root.appendChild(card.el);
+    }
+    paint(card, d);
+  }
+  for (const [id, card] of cards) {
+    if (!seen.has(id)) {
+      card.el.remove();
+      cards.delete(id);
+    }
+  }
 }
 
 async function tick() {
   try {
-    const r = await fetch('/api/summary');
-    const data = await r.json();
-    document.getElementById('root').innerHTML =
-      data.devices.length ? data.devices.map(card).join('') : '<p class="muted">no devices yet</p>';
+    const res = await fetch('/api/summary', { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    render(data.devices);
+    lastOk = Date.now();
+    fails = 0;
+    banner.hidden = true;
+    root.classList.remove('stale');
   } catch (e) {
-    // keep the last render on a failed poll
+    // keep the last good data on screen, but stop pretending it is live
+    if (++fails >= 2) {
+      banner.hidden = false;
+      root.classList.add('stale');
+    }
   }
 }
+
+// a frozen page must be obvious, so show how old the data is
+setInterval(() => {
+  if (!lastOk) return;
+  const age = Math.round((Date.now() - lastOk) / 1000);
+  freshness.textContent = age <= 3 ? 'live' : 'updated ' + age + 's ago';
+}, 1000);
 
 tick();
 setInterval(tick, 2000);

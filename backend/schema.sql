@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS fills (
 -- Application user. Change the password here and in DATABASE_URL before running.
 -- The backend only ever reads and inserts, so it gets nothing else. Use '%'
 -- instead of 'localhost' if the backend runs in a container or on another host.
-CREATE USER IF NOT EXISTS 'cng'@'localhost' IDENTIFIED BY 'change-this-password';
+CREATE USER IF NOT EXISTS 'cng'@'localhost' IDENTIFIED BY '12345678';
 GRANT SELECT, INSERT ON cng.fills TO 'cng'@'localhost';
 
 -- The backend's MySQL driver speaks mysql_native_password, caching_sha2_password

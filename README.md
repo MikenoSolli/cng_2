@@ -83,23 +83,30 @@ Needs Rust (stable) to build.
 ```sh
 cd backend
 cargo build --release
-DATABASE_URL='mysql://cng:change-this-password@127.0.0.1:3306/cng' \
-  PORT=8080 TCP_PORT=5000 API_KEY=change-me ./target/release/cng-dashboard
+DATABASE_URL='mysql://cng:12345678@127.0.0.1:3306/cng' ./target/release/cng-dashboard
 ```
 
 Then open `http://localhost:8080/`.
 
 | Env var        | Default                  | Meaning                                       |
 |----------------|--------------------------|-----------------------------------------------|
-| `DATABASE_URL` | `mysql://cng:change-this-password@127.0.0.1:3306/cng` | MariaDB connection |
-| `PORT`         | `8080`                   | HTTP port (dashboard + API)                   |
+| `DATABASE_URL` | `mysql://cng:12345678@127.0.0.1:3306/cng` | MariaDB connection           |
+| `PORT`         | `8080`                   | HTTP port, serves the dashboard and the API   |
 | `TCP_PORT`     | `5000`                   | device port, the sketch's `SERVER_PORT`       |
-| `TCP_ADDR`     | `192.46.236.241`         | address the device port binds to              |
-| `API_KEY`      | `change-me`              | required in `X-API-Key` on the two POST routes|
+| `TCP_ADDR`     | `0.0.0.0`                | address the device port binds to              |
 
-`TCP_ADDR` must be an address the machine actually owns, or the process exits at
-startup. Use `0.0.0.0` to listen on every interface, which is what the container
-needs since it cannot bind the host's public IP.
+Both listeners bind every interface by default, so the dashboard is reachable at
+the VPS public IP on port 8080 with nothing in front of it. Put it behind the
+existing Nginx only if you want it on port 80/443.
+
+If you do set `TCP_ADDR` to a specific address, it must be one the machine really
+owns. A failed bind there does **not** stop the process — the listener runs in its
+own task, so the dashboard keeps serving while the device port is silently dead.
+Check the startup lines.
+
+There is no API key. The sniffer speaks plain TCP and sends no credentials, so
+nothing on the backend is authenticated. Fine for an MVP on a trusted network;
+do not put the POST routes on the open internet as they are.
 
 The backend refuses to start if it cannot reach the database or the `fills`
 table is missing, rather than failing later on the first fill.
@@ -111,7 +118,7 @@ Routes:
   just over two idle intervals), last 10 fills, today's kg/amount, all-time kg/amount.
 - `POST /api/status`, `POST /api/fill` — JSON equivalents of the two device
   lines, kept only so the dashboard can be driven with fake data (below). The
-  hardware does not use them. Both need `X-API-Key`.
+  hardware does not use them, and neither is authenticated.
 
 ### Docker
 
@@ -122,7 +129,6 @@ docker run -d --name cng-dashboard --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -p 5000:5000 \
   --add-host host.docker.internal:host-gateway \
   -e DATABASE_URL='mysql://cng:real-password@host.docker.internal:3306/cng' \
-  -e API_KEY=pick-a-real-key \
   cng-dashboard
 ```
 
@@ -143,8 +149,6 @@ location / {
 ## Testing without hardware
 
 Pretend to be the sniffer over TCP — this exercises the real path, ACKs included.
-Note the default `TCP_ADDR` binds one public IP, so `localhost` will refuse the
-connection; either use that address or start the backend with `TCP_ADDR=0.0.0.0`.
 
 ```sh
 # needs netcat; -q1 keeps the socket open long enough to read the ACK back
@@ -154,16 +158,16 @@ printf 'F,D01,A1B2C3D4-7,8.420,13051.00,120.500,idle,1500\n' | nc -q1 localhost 
 # -> ACK,A1B2C3D4-7 ; sending the same line again ACKs but does not double count
 ```
 
-Or over HTTP, with the server on port 8080 and `API_KEY=change-me`:
+Or over HTTP, with the server on port 8080:
 
 ```sh
 curl -X POST http://localhost:8080/api/status \
-  -H 'Content-Type: application/json' -H 'X-API-Key: change-me' \
+  -H 'Content-Type: application/json' \
   -d '{"device_id":"D01","filling":true,"flow_kg_h":214.5,"temp_c":31.2,
        "current_kg":4.317,"bad_crc_count":3,"uptime_ms":845000}'
 
 curl -X POST http://localhost:8080/api/fill \
-  -H 'Content-Type: application/json' -H 'X-API-Key: change-me' \
+  -H 'Content-Type: application/json' \
   -d '{"device_id":"D01","fill_id":"A1B2C3D4-7","served_kg":8.42,
        "amount":13051,"total_served_kg":120.5,"closed_by":"idle","age_ms":1500}'
 
